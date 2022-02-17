@@ -20,7 +20,7 @@ inputs:
 
 
 runs:
-  using: "ubuntu-latest"
+  using: "composite"
   steps:
     - uses: google-github-actions/setup-gcloud@v0
       id: setup_gcloud
