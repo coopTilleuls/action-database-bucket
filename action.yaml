@@ -1,0 +1,66 @@
+inputs:
+  CLUSTER:
+    required: true
+  SECRETS_JSON:
+    required: true
+  ACTION:
+    required: true
+    default: "create"
+    description: "create, delete or export"
+  PREFIX_NAME:
+    required: true
+  NAMESPACE:
+    required: true
+  DB_USER:
+    required: true
+  DB_NAME:
+    required: true
+  SITE_BACK_DOMAIN:
+    required: false
+
+
+runs:
+  using: "ubuntu-latest"
+  steps:
+    - uses: google-github-actions/setup-gcloud@v0
+      id: setup_gcloud
+      with:
+          # https://github.com/google-github-actions/setup-gcloud/issues/128
+         version: '290.0.1'
+            # service_account_key: ${{ secrets.GKE_SA_KEY }}
+            # project_id: ${{ secrets.GKE_PROJECT }}
+    - shell: bash
+      id: setup_bucket
+      run: |
+        set -e
+
+        function get_input() {
+          local key=$1
+          jq -r ".$key // empty" <<EOF
+          ${{ inputs.SECRETS_JSON }}
+        EOF
+        }
+
+        CLUSTER=${{ inputs.CLUSTER }}
+        CLUSTER_UC=$(echo ${{ inputs.CLUSTER }} | tr a-z A-Z)
+        SQL_PROXY_AUTH_BASE64="$(get_input SQL_PROXY_AUTH_BASE64_${CLUSTER_UC})"
+        AUTH_FILE=/tmp/gce-cloudsql-proxy-key.json
+        BUCKET_NAME="$(get_input BUCKET_NAME_${CLUSTER_UC})"
+
+        # create sql auth config
+        base64 -d <<EOF > $AUTH_FILE
+        $SQL_PROXY_AUTH_BASE64
+        EOF
+        gcloud auth activate-service-account --key-file $AUTH_FILE
+
+        DATEDJ=$(date +%F)
+
+        if [ "${{ inputs.ACTION }}" == "export" ]; then
+          gsutil cp ./${DATEDJ}-dump.sql.gz gs://$BUCKET_NAME
+          cp ./${DATEDJ}-dump.sql.gz ./latest.sql.gz
+          gsutil cp ./latest.sql.gz gs://$BUCKET_NAME
+        fi
+
+        if [ "${{ inputs.ACTION }}" == "import" ]; then
+          gsutil cp gs://$BUCKET_NAME/latest.sql.gz ./latest.sql.gz 
+        fi
